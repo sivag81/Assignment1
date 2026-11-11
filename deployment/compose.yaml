@@ -1,0 +1,68 @@
+name: assignment-bookstore
+services:
+  book-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: bookdb
+      POSTGRES_USER: book_user
+      POSTGRES_PASSWORD: book_local_demo
+    volumes:
+      - book-data:/var/lib/postgresql/data
+      - ../book-service/init.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U book_user -d bookdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  order-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: orderdb
+      POSTGRES_USER: order_user
+      POSTGRES_PASSWORD: order_local_demo
+    volumes:
+      - order-data:/var/lib/postgresql/data
+      - ../order-service/init.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U order_user -d orderdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  book-service:
+    image: book-service:1.0
+    build: ../book-service
+    environment:
+      DATABASE_URL: postgresql+psycopg://book_user:book_local_demo@book-db:5432/bookdb
+    ports: ["127.0.0.1:8001:8000"]
+    depends_on:
+      book-db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  order-service:
+    image: order-service:1.0
+    build: ../order-service
+    environment:
+      DATABASE_URL: postgresql+psycopg://order_user:order_local_demo@order-db:5432/orderdb
+      BOOK_SERVICE_URL: http://book-service:8000
+    ports: ["127.0.0.1:8002:8000"]
+    depends_on:
+      order-db:
+        condition: service_healthy
+      book-service:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  book-data:
+  order-data:
